@@ -49,13 +49,15 @@ function unproject(x, y) {
 
 以只包含单一 Tile 为最小放大级别 8，大地图 1:1 缩放为最大放大级别。每级别的大地图均为前一级在横向与纵向上各放大2倍。
 
-以目前提供的 6x6 大图（12888x12888 pixels）为例，放大级别 0 仅包含一张内容大小为 192x192 的 Tile，而最大放大级别 14 则有 2304 张 256x256 的 Tile。
+以目前提供的 6x6 大图（12888x12888 pixels）为例，放大级别 8 仅包含一张内容大小为 192x192 的 Tile，而最大放大级别 14 则有 2304 张 256x256 的 Tile。
 
 注意，此处所述的最小放大级别与最大放大级别均为生成的 Tile 支持的放大级别，即所谓的 `NativeZoomLevel`。需要更大或者更小的级别则需要地图框架自行缩放，实际的缩放级别范围请视情况决定。
 
 此外，可选地，部分 Retina 屏幕需要使用更加清晰的 Tile，生成方式已在示例工具链中给出。
 
 [示例工具链](https://gitee.com/KYJGYSDT/map-tile-generator)
+
+[示例 Tile 链接](http://ysmap.projectxero.top/mapdata/yuanshen.site/tiles/12@2x/7_3.jpg)：http://ysmap.projectxero.top/mapdata/yuanshen.site/tiles/{z}{r}/{x}_{y}.jpg
 
 ## 适配内容
 
