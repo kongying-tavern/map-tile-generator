@@ -13,37 +13,61 @@ function ensureParentDir(path) {
     ensureDir(nodePath.dirname(path));
 }
 
-function saveBufferToFile(path, buffer) {
-    ensureParentDir(path);
-    fs.writeFileSync(path, buffer);
-}
+async function createFile(resolveArgs, callback, skipIfExists) {
+    const path = nodePath.resolve(...resolveArgs);
+    if (!skipIfExists || !fs.existsSync(path)) {
+		ensureParentDir(path);
+        fs.writeFileSync(path, await callback());
+	}
+};
 
-async function montageImage(files, size, tileSize) {
-    const cv = nodeCanvas.createCanvas(size[0], size[1]);
-    const ctx = cv.getContext("2d", { alpha: false });
-    let x, y, col;
-    ctx.fillStyle = "black";
-    ctx.fill();
-    for (x = 0; x < files.length; x++) {
-        col = files[x];
-        for (y = 0; y < col.length; y++) {
-            let tile = await nodeCanvas.loadImage(fs.readFileSync(col[y]));
+async function generateCanvasFromFile(resolveArgs) {
+    const filePath = nodePath.resolve(...resolveArgs);
+    const parentPath = nodePath.resolve(filePath, "..");
+    const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    const cv = nodeCanvas.createCanvas(data.size[0], data.size[1]);
+    const alphaEnabled = data.alpha;
+    const ctx = cv.getContext("2d", { alpha: alphaEnabled });
+    if (!alphaEnabled) {
+        ctx.fillStyle = "black";
+        ctx.fill();
+    }
+    if (data.type == "tile") {
+        let tiles = data.tiles;
+        let x, y, col, tileWidth = data.size[0] / tiles.length, tileHeight;
+        for (x = 0; x < tiles.length; x++) {
+            col = tiles[x];
+            tileHeight = data.size[1] / col.length;
+            for (y = 0; y < col.length; y++) {
+                if (col[y]) {
+                    let tile = await nodeCanvas.loadImage(fs.readFileSync(nodePath.resolve(parentPath, col[y])));
+                    ctx.drawImage(
+                        tile,
+                        tileWidth * x, tileHeight * y,
+                        tileWidth, tileHeight
+                    );
+                }
+            }
+        }
+    } else if (data.type == "slice") {
+        let slices = data.slices;
+        let i;
+        for (i = 0; i < slices.length; i++) {
+            let slice = await nodeCanvas.loadImage(fs.readFileSync(nodePath.resolve(parentPath, slices[i].path)));
             ctx.drawImage(
-                tile,
-                tileSize[0] * x, tileSize[1] * y,
-                tileSize[0], tileSize[1]
+                slice,
+                ...slices[i].rect
             );
         }
     }
     return cv;
 }
 
-async function applyMask(cv, maskFilePath) {
-    let mask = await nodeCanvas.loadImage(fs.readFileSync(maskFilePath));
+function applyLayer(cv, layer, composite) {
     let ctx = cv.getContext("2d");
     ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    ctx.drawImage(mask, 0, 0, cv.width, cv.height);
+    ctx.globalCompositeOperation = composite || "source-over";
+    ctx.drawImage(layer, 0, 0, cv.width, cv.height);
     ctx.restore();
     return cv;
 }
@@ -67,70 +91,77 @@ async function clipIntoTiles(drawable, scale, tileSize, onTileComplete) {
     }
 }
 
-async function main() {
-    console.time("Total");
+async function processMap(mapConfig, inputPath, outputPath) {
+    const mapId = mapConfig.id;
 
-    console.time("Montage image");
-    let montagedImage = await montageImage(
-        new Array(6).fill(0).map((_, x) => {
-            return new Array(6).fill(0).map((_, y) => {
-                return nodePath.resolve(__dirname, "input", (y + 1) + "_" + (x + 1) + ".png");
-            })
-        }),
-        [2048 * 6, 2048 * 6],
-        [2048, 2048]
-    );
-    console.timeEnd("Montage image");
+    console.time(mapId);
+    console.timeLog(mapId, "Generate map image");
+    let mapImage = await generateCanvasFromFile([inputPath, mapConfig.map]);
 
-    console.time("Apply mask to montaged image");
-    montagedImage = await applyMask(montagedImage, nodePath.resolve(__dirname, "input", "mask.png"));
-    console.timeEnd("Apply mask to montaged image");
+    console.timeLog(mapId, "Generate accessible border");
+    let accessibleBorder = await generateCanvasFromFile([inputPath, mapConfig.accessibleBorder]);
 
-    let montagedImagePath = nodePath.resolve(__dirname, "output", "image", "output.png");
-    if (!fs.existsSync(montagedImagePath)) { // You should remove output.png first to regenerate
-        console.time("Save montaged image");
-        saveBufferToFile(montagedImagePath, montagedImage.toBuffer("image/png", {
-            compressionLevel: 6 // 9 takes too much time
-        }));
-        console.timeEnd("Save montaged image");
-    }
+    console.timeLog(mapId, "Save accessible border");
+    createFile([outputPath, mapId, "images", "accessible_border.png"], () => {
+        return accessibleBorder.toBuffer("image/png", {
+            compressionLevel: 9
+        });
+    });
 
-    let montagedImageJPEGPath = nodePath.resolve(__dirname, "output", "image", "output.jpg");
-    if (!fs.existsSync(montagedImageJPEGPath)) { // You should remove output.jpg first to regenerate
-        console.time("Save montaged image jpeg");
-        saveBufferToFile(montagedImageJPEGPath, montagedImage.toBuffer("image/jpeg", {
+    console.timeLog(mapId, "Apply accessible border");
+    mapImage = applyLayer(mapImage, accessibleBorder, "screen");
+
+    console.timeLog(mapId, "Save map");
+    createFile([outputPath, mapId, "images", "map.png"], () => {
+        return mapImage.toBuffer("image/png", {
+            compressionLevel: 6
+        });
+    }, true);
+
+    console.timeLog(mapId, "Save map jpeg");
+    createFile([outputPath, mapId, "images", "map.jpg"], () => {
+        return mapImage.toBuffer("image/jpeg", {
             quality: 0.9
-        }));
-        console.timeEnd("Save montaged image jpeg");
-    }
+        });
+    });
 
     let zoomLevel, zoomValue;
-    const maxZoomLevel = Math.ceil(Math.log(Math.max(montagedImage.width, montagedImage.height)) / Math.LN2);
+    const maxZoomLevel = Math.ceil(Math.log(Math.max(mapImage.width, mapImage.height)) / Math.LN2);
     const minZoomLevel = 8;
-    console.time("Generate tiles");
+    console.timeLog(mapId, "Generate tiles");
     for (zoomLevel = maxZoomLevel, zoomValue = 1; zoomLevel >= minZoomLevel; zoomLevel--, zoomValue *= 2) {
-        console.time("Generate tiles for zoomLevel = " + zoomLevel);
-        await clipIntoTiles(montagedImage, zoomValue, [256, 256], (x, y, tileImage) => {
-            let outputPath = nodePath.resolve(__dirname, "output", "tiles", zoomLevel.toString(), x + "_" + y + ".jpg");
-            ensureParentDir(outputPath);
-            saveBufferToFile(outputPath, tileImage.toBuffer("image/jpeg", {
-                quality: 0.9
-            }));
+        console.timeLog(mapId, "Generate tiles for zoomLevel = " + zoomLevel);
+        await clipIntoTiles(mapImage, zoomValue, [256, 256], (x, y, tileImage) => {
+            createFile([outputPath, mapId, "tiles", zoomLevel + "", x + "_" + y + ".jpg"], () => {
+                return tileImage.toBuffer("image/jpeg", {
+                    quality: 0.9
+                });
+            });
         });
-        console.timeEnd("Generate tiles for zoomLevel = " + zoomLevel);
-        console.time("Generate tiles for zoomLevel = " + zoomLevel + "@2x");
-        await clipIntoTiles(montagedImage, zoomValue / 2, [512, 512], (x, y, tileImage) => {
-            let outputPath = nodePath.resolve(__dirname, "output", "tiles", zoomLevel.toString() + "@2x", x + "_" + y + ".jpg");
-            ensureParentDir(outputPath);
-            saveBufferToFile(outputPath, tileImage.toBuffer("image/jpeg", {
-                quality: 0.9
-            }));
-        });
-        console.timeEnd("Generate tiles for zoomLevel = " + zoomLevel + "@2x");
-    }
-    console.timeEnd("Generate tiles");
 
-    console.timeEnd("Total");
+        console.timeLog(mapId, "Generate tiles for zoomLevel = " + zoomLevel + "@2x");
+        await clipIntoTiles(mapImage, zoomValue / 2, [512, 512], (x, y, tileImage) => {
+            createFile([outputPath, mapId, "tiles", zoomLevel + "@2x", x + "_" + y + ".jpg"], () => {
+                return tileImage.toBuffer("image/jpeg", {
+                    quality: 0.9
+                });
+            });
+        });
+    }
+
+    console.timeEnd(mapId);
+}
+
+async function main() {
+    const config = JSON.parse(fs.readFileSync(nodePath.resolve(__dirname, "input", "config.json"), "utf-8"));
+    let i;
+    for (i = 0; i < config.maps.length; i++) {
+        await processMap(
+            config.maps[i],
+            nodePath.resolve(__dirname, "input"),
+            nodePath.resolve(__dirname, "output")
+        );
+    }
 }
 
 main().catch(err => {

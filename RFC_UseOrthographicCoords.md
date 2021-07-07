@@ -57,7 +57,7 @@ function unproject(x, y) {
 
 [示例工具链](https://gitee.com/KYJGYSDT/map-tile-generator)
 
-[示例 Tile 链接](http://ysmap.projectxero.top/mapdata/yuanshen.site/tiles/12@2x/7_3.jpg)：http://ysmap.projectxero.top/mapdata/yuanshen.site/tiles/{z}{r}/{x}_{y}.jpg
+[示例 Tile 链接](http://ysmap.projectxero.top/mapdata/yuanshen.site/tiles/12@2x/7_3.jpg)：`http://ysmap.projectxero.top/mapdata/yuanshen.site/tiles/{z}{r}/{x}_{y}.jpg`
 
 ## 适配内容
 

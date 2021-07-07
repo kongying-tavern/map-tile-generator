@@ -1,0 +1,22 @@
+{
+    "maps": [
+        {
+            "id": "teyvat",
+            "name": "Teyvat",
+            "map": "teyvat/map/tiles.json",
+            "accessibleBorder": "teyvat/accessible_border/border.json"
+        },
+        {
+            "id": "v1.6_archipelago_submerged",
+            "name": "Golden Apple Archipelago (Submerged)",
+            "map": "v1.6_archipelago/map_submerged/tiles.json",
+            "accessibleBorder": "v1.6_archipelago/accessible_border/border.json"
+        },
+        {
+            "id": "v1.6_archipelago_risen",
+            "name": "Golden Apple Archipelago (Risen)",
+            "map": "v1.6_archipelago/map_risen/tiles.json",
+            "accessibleBorder": "v1.6_archipelago/accessible_border/border.json"
+        }
+    ]
+}

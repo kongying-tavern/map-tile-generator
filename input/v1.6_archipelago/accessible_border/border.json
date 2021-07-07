@@ -1,0 +1,11 @@
+{
+    "type": "slice",
+    "size": [1024, 1024],
+    "alpha": false,
+    "slices": [
+        {
+            "path": "Tex_0803_0.png",
+            "rect": [-512, -512, 2048, 2048]
+        }
+    ]
+}
